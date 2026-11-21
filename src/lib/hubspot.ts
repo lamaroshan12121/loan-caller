@@ -90,6 +90,27 @@ export async function updateContact(contactId: string, properties: Record<string
   await hs("PATCH", `/crm/v3/objects/contacts/${contactId}`, { properties });
 }
 
+/**
+ * True if this contact, or any contact with this phone number, was marked opted_out on an earlier AI call.
+ * (post-call writes ai_call_outcome = "opted_out" when someone says "stop calling me".)
+ */
+export async function isOptedOut(phone: string, contactId: string): Promise<boolean> {
+  const res = await hs<{ total: number }>("POST", "/crm/v3/objects/contacts/search", {
+    filterGroups: [
+      { filters: [
+        { propertyName: "phone", operator: "EQ", value: phone },
+        { propertyName: "ai_call_outcome", operator: "EQ", value: "opted_out" },
+      ] },
+      { filters: [
+        { propertyName: "hs_object_id", operator: "EQ", value: contactId },
+        { propertyName: "ai_call_outcome", operator: "EQ", value: "opted_out" },
+      ] },
+    ],
+    limit: 1,
+  });
+  return res.total > 0;
+}
+
 export async function moveDealToStage(dealId: string, stageEnvName: string) {
   await hs("PATCH", `/crm/v3/objects/deals/${dealId}`, {
     properties: { dealstage: env(stageEnvName) },
@@ -129,6 +150,31 @@ export async function createTask(t: {
     },
     // 204 = task to contact, 216 = task to deal
     associations: [assoc(t.contactId, 204), assoc(t.dealId, 216)],
+  });
+  return res.id;
+}
+
+/** A scheduled 30-minute meeting on the contact and the deal. */
+export async function createMeeting(m: {
+  title: string;
+  body: string;
+  startsAt: Date;
+  minutes: number;
+  contactId: string;
+  dealId: string;
+}): Promise<string> {
+  const end = new Date(m.startsAt.getTime() + m.minutes * 60 * 1000);
+  const res = await hs<{ id: string }>("POST", "/crm/v3/objects/meetings", {
+    properties: {
+      hs_timestamp: m.startsAt.toISOString(),
+      hs_meeting_title: m.title,
+      hs_meeting_body: m.body,
+      hs_meeting_start_time: m.startsAt.toISOString(),
+      hs_meeting_end_time: end.toISOString(),
+      hs_meeting_outcome: "SCHEDULED",
+    },
+    // 200 = meeting to contact, 212 = meeting to deal
+    associations: [assoc(m.contactId, 200), assoc(m.dealId, 212)],
   });
   return res.id;
 }

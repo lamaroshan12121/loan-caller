@@ -41,3 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 .trigger
+# Aircall debug capture (contains caller details)
+aircall-payloads.log

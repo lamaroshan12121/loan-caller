@@ -1,6 +1,7 @@
 import { tasks } from "@trigger.dev/sdk";
 import { z } from "zod";
 import { createDeal, upsertContact } from "@/lib/hubspot";
+import { clientIp, hasActiveRun, phoneTag, rateLimited } from "@/lib/guards";
 import type { inquiryReceived } from "@/trigger/inquiry-received";
 
 const INQUIRY_TYPES = [
@@ -30,9 +31,15 @@ const Body = z.object({
   inquiryType: z.enum(INQUIRY_TYPES),
   message: z.string().trim().max(2000).optional(),
   consent: z.literal(true),
+  // Honeypot: hidden from people, bots fill it in.
+  website: z.string().optional(),
 });
 
 export async function POST(req: Request) {
+  if (rateLimited(clientIp(req))) {
+    return Response.json({ error: "Too many requests. Please try again in a few minutes." }, { status: 429 });
+  }
+
   let json: unknown;
   try {
     json = await req.json();
@@ -49,6 +56,9 @@ export async function POST(req: Request) {
   }
   const b = parsed.data;
 
+  // Honeypot filled in: pretend it worked, do nothing.
+  if (b.website) return Response.json({ ok: true });
+
   const phone = toE164AU(b.phone);
   if (!phone) {
     return Response.json(
@@ -58,6 +68,11 @@ export async function POST(req: Request) {
   }
 
   try {
+    // Already being handled? Same answer to the person, but no second deal and no second call.
+    if (await hasActiveRun(phone)) {
+      return Response.json({ ok: true, duplicate: true });
+    }
+
     const contactId = await upsertContact({
       email: b.email,
       firstName: b.firstName,
@@ -76,10 +91,11 @@ export async function POST(req: Request) {
       contactId,
       dealId,
       firstName: b.firstName,
+      email: b.email,
       phone,
       inquiryType: b.inquiryType,
       message: b.message ?? "",
-    });
+    }, { tags: [phoneTag(phone)] });
 
     return Response.json({ ok: true, runId: handle.id });
   } catch (err) {

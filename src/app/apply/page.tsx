@@ -42,6 +42,7 @@ export default function ApplyPage() {
         inquiryType: f.get("inquiryType"),
         message: f.get("message") || undefined,
         consent: f.get("consent") === "on",
+        website: f.get("website") || undefined,
       }),
     });
 
@@ -69,6 +70,10 @@ export default function ApplyPage() {
       <p style={{ color: "#555", marginBottom: 28 }}>Tell us what you need and we will call you shortly.</p>
 
       <form onSubmit={onSubmit}>
+        {/* Honeypot: people never see this, bots fill it in. */}
+        <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", height: 0, overflow: "hidden" }}>
+          <label>Website <input name="website" tabIndex={-1} autoComplete="off" /></label>
+        </div>
         <div style={row}>
           <label style={label} htmlFor="firstName">First name</label>
           <input style={field} id="firstName" name="firstName" required />
